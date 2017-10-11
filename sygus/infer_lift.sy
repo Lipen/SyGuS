@@ -1,0 +1,115 @@
+(set-logic LRA)
+
+(synth-fun setTimer ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun waitTimer ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun systemInitReady ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun closingDoor ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun buttonInterrupted ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun openingDoor ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun fullyOpen ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun fullyClosed ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun requestOpen ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+(synth-fun timeout ((t Int)) Int
+    ((Start Int
+        (0 1 3 5 10 t
+         (+ Start Start)
+         (- Start Start)
+         (* Start Start)))))
+
+(constraint (= (buttonInterrupted 0) 3))
+(constraint (= (buttonInterrupted 1) 3))
+(constraint (= (buttonInterrupted 2) 3))
+(constraint (= (buttonInterrupted 3) 3))
+(constraint (= (buttonInterrupted 4) 3))
+(constraint (= (buttonInterrupted 5) 3))
+(constraint (= (buttonInterrupted 6) 3))
+(constraint (= (buttonInterrupted 7) 3))
+(constraint (= (buttonInterrupted 8) 3))
+(constraint (= (buttonInterrupted 9) 3))
+(constraint (= (closingDoor 1) 0))
+(constraint (= (closingDoor 2) 1))
+(constraint (= (closingDoor 3) 2))
+(constraint (= (closingDoor 4) 3))
+(constraint (= (closingDoor 5) 4))
+(constraint (= (closingDoor 6) 5))
+(constraint (= (closingDoor 7) 6))
+(constraint (= (closingDoor 8) 7))
+(constraint (= (closingDoor 9) 8))
+(constraint (= (closingDoor 10) 9))
+(constraint (= (fullyClosed 0) 0))
+(constraint (= (fullyOpen 1) 0))
+(constraint (= (fullyOpen 2) 1))
+(constraint (= (openingDoor 3) 2))
+(constraint (= (openingDoor 4) 3))
+(constraint (= (openingDoor 5) 4))
+(constraint (= (openingDoor 6) 5))
+(constraint (= (openingDoor 7) 6))
+(constraint (= (openingDoor 8) 7))
+(constraint (= (openingDoor 9) 8))
+(constraint (= (openingDoor 10) 9))
+(constraint (= (requestOpen 0) 10))
+(constraint (= (setTimer 0) 5))
+(constraint (= (setTimer 1) 5))
+(constraint (= (setTimer 2) 5))
+(constraint (= (setTimer 3) 5))
+(constraint (= (setTimer 4) 5))
+(constraint (= (setTimer 5) 5))
+(constraint (= (setTimer 6) 5))
+(constraint (= (setTimer 7) 5))
+(constraint (= (setTimer 8) 5))
+(constraint (= (setTimer 9) 5))
+(constraint (= (setTimer 10) 5))
+(constraint (= (systemInitReady 0) 10))
+(constraint (= (timeout 0) 5))
+(constraint (= (waitTimer 1) 0))
+(constraint (= (waitTimer 2) 1))
+(constraint (= (waitTimer 3) 2))
+(constraint (= (waitTimer 4) 3))
+(constraint (= (waitTimer 5) 4))
+
+(check-synth)
