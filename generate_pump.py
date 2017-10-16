@@ -1,11 +1,23 @@
+import os
 import time
+import regex
+import textwrap
+import subprocess
+from pathlib import Path
 from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import defaultdict
 
-filename_traces = 'traces/minePump'
-filename_sygus = 'sygus/infer_pump.sy'
+path_traces = Path('traces/minePump')
+path_sygus_template = 'sygus/infer_pump_{}.sy'
+path_inferred = Path('done/inferred_pump.sy')
+os.makedirs(os.path.dirname(path_inferred), exist_ok=True)
 
 sygus_logic = 'Reals'
 compress_round = 3
+infer_regex = r'\(define-fun (?P<func_name>\w+) \((?:\((?P<arg_name>\w+) (?P<arg_type>\w+)\) ?)*\) (?P<ret_type>\w+) (?P<body>.*)\)'
+infer_pattern = regex.compile(infer_regex)
+time_start = time.time()
 
 
 def state2funcname(x):
@@ -13,37 +25,30 @@ def state2funcname(x):
     return 'state{}'.format(x)
 
 
-with open(filename_traces) as ft, open(filename_sygus, 'w') as fs:
-    traces = []  # [trace]
-    trace = []  # (state_from, state_to, (water, methane, pump))
-    constraints = []  # [trace]
-    current_state = 1
+#   Int :: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+# State :: A B C D E F G H I J  K  L  M  N  O
+automaton = {  # {state_from: {label: state_to}}
+    1: {'highwater': 2, 'critical': 3},
+    2: {'switch_pump_on': 4},
+    3: {'not_critical': 5, 'highwater': 6},
+    4: {'turn_on': 7},
+    5: {'highwater': 8},
+    6: {'critical': 6, 'not_critical': 9},
+    7: {'low_water': 10, 'critical': 11},
+    8: {'switch_pump_on': 12},
+    9: {'switch_pump_on': 15},
+    10: {'switch_pump_off': 13},
+    11: {'switch_pump_off': 14},
+    12: {'turn_on': 7},
+    13: {'turn_off': 1},
+    14: {'turn_off': 6},
+    15: {'turn_on': 7}
+}
 
-    #   Int :: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
-    # State :: A B C D E F G H I J  K  L  M  N  O
-    automaton = {  # {state_from: {label: state_to}}
-        1: {'highwater': 2, 'critical': 3},
-        2: {'switch_pump_on': 4},
-        3: {'not_critical': 5, 'highwater': 6},
-        4: {'turn_on': 7},
-        5: {'highwater': 8},
-        6: {'critical': 6, 'not_critical': 9},
-        7: {'low_water': 10, 'critical': 11},
-        8: {'switch_pump_on': 12},
-        9: {'switch_pump_on': 15},
-        10: {'switch_pump_off': 13},
-        11: {'switch_pump_off': 14},
-        12: {'turn_on': 7},
-        13: {'turn_off': 1},
-        14: {'turn_off': 6},
-        15: {'turn_on': 7}
-    }
-
-    print('[*] Reading traces from <{}>...'.format(filename_traces))
-    time_start = time.time()
-
+print('[*] Reading traces from <{}>...'.format(path_traces))
+with path_traces.open() as f:
     print('[*] Skipping types...')
-    for line in ft:
+    for line in f:
         if line.rstrip() == 'trace':
             break
     else:
@@ -53,7 +58,11 @@ with open(filename_traces) as ft, open(filename_sygus, 'w') as fs:
     # - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
 
     print('[*] Parsing traces...')
-    for line in ft:
+    trace = []  # (state_from, state_to, (water, methane, pump))
+    traces = []  # [trace]
+    current_state = 1
+
+    for line in f:
         line = line.rstrip()
         if line == 'trace':
             if trace:
@@ -78,103 +87,111 @@ with open(filename_traces) as ft, open(filename_sygus, 'w') as fs:
 
     print('[+] Total traces: {}'.format(len(traces)))
 
-    # - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
+# - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
 
-    print('[*] Generating constraints...')
-    for trace in traces:
-        for event in trace:
-            constraints.append(event)
+print('[*] Generating constraints...')
+constraints = defaultdict(list)  # {state_from: [(state_to, (water, methane, pump))]}
+for trace in traces:
+    for state_from, state_to, (water, methane, pump) in trace:
+        constraints[state_from].append((state_to, (water, methane, pump)))
 
-    print('[+] Total constraints: {}'.format(len(constraints)))
+print('[+] Total constraints: {}'.format(sum(len(item) for item in constraints.values())))
 
-    # - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
+# - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
 
-    print('[*] Compressing constraints by rounding to {} digit...'.format(compress_round))
+print('[*] Compressing constraints by rounding to {} digit...'.format(compress_round))
 
-    constraints = {(sf, st, (round(w, compress_round), round(m, compress_round), p)) for sf, st, (w, m, p) in constraints}
+constraints = {state_from: [(state_to, (round(water, compress_round), round(methane, compress_round), pump)) for state_to, (water, methane, pump) in xxx] for state_from, xxx in constraints.items()}
 
-    print('[*] Total compressed constraints: {}'.format(len(constraints)))
+print('[*] Total compressed constraints: {}'.format(sum(len(item) for item in constraints.values())))
 
-    # - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
+# - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
 
-    print('[*] Writing SyGuS to <{}>...'.format(filename_sygus))
-    print(' >  Using {} logic'.format(sygus_logic))
-    fs.write('(set-logic {})\n\n'.format(sygus_logic))
-    fs.write('(define-sort State () Int)\n\n')
 
-    print(' >  Writing synth-fun declarations...')
-    for state in sorted(automaton):
-        function_name = state2funcname(state)
+def write_sygus(state):
+    function_name = state2funcname(state)
+    path_sygus = Path(path_sygus_template.format(function_name))
+
+    print(f'[.] State #{state}: writing SyGuS to <{path_sygus}>...')
+    # print(f'[.] State #{state}: using {sygus_logic} logic')
+
+    with path_sygus.open('w') as f:
+        f.write('(set-logic {})\n\n'.format(sygus_logic))
+        f.write('(define-sort State () Int)\n\n')
+
+        print(f'[.] State #{state}: writing synth-fun...')
         arguments = '(water Real) (methane Real) (pump Bool)'
         possible_states = list(automaton[state].values())
         start_block = ''
         for ps in possible_states[:-1]:
-            start_block += '(ite BoolExpr {} '.format(ps)
-        start_block += str(possible_states[-1]) + ')' * (len(possible_states) - 1)
+            start_block += f'(ite BoolExpr {ps} '
+        ll = len(possible_states) - 1
+        start_block += str(possible_states[-1]) + ')' * ll
         allowed_values = [600]
+        allowed_values = ' '.join(map(str, allowed_values))
 
-        # state_water = {}
-        # for state_from, state_to, (water, _, _) in constraints:
-        #     if state_from == state:
-        #         if state_to in state_water:
-        #             state_water[state_to].append(water)
-        #         else:
-        #             state_water[state_to] = [water]
-        # state_methane = {}
-        # for state_from, state_to, (_, methane, _) in constraints:
-        #     if state_from == state:
-        #         if state_to in state_methane:
-        #             state_methane[state_to].append(methane)
-        #         else:
-        #             state_methane[state_to] = [methane]
-        # state_water_min = {state_to: min(item) for state_to, item in state_water.items()}
-        # state_water_max = {state_to: max(item) for state_to, item in state_water.items()}
-        # state_methane_min = {state_to: min(item) for state_to, item in state_methane.items()}
-        # state_methane_max = {state_to: max(item) for state_to, item in state_methane.items()}
-        # for state_to in automaton[state].values():
-        #     for state_water_ in state_water_min, state_water_max, state_methane_min, state_methane_max:
-        #         allowed_values.append('(/ {} {})'.format(*Decimal(state_water_[state_to]).as_integer_ratio()))
+        s = f'''
+        (synth-fun {function_name} ({arguments}) State (
+            (Start State (
+                {start_block}
+            ))
+            (BoolExpr Bool (
+                (Variable Bool)
+                (not BoolExpr)
+                (and BoolExpr BoolExpr)
+                (<= RealExpr RealExpr)
+            ))
+            (RealExpr Real (
+                {allowed_values}
+                (Variable Real)
+                (ite BoolExpr RealExpr RealExpr)
+            ))
+        ))'''
+        f.write(textwrap.dedent(s).strip() + '\n\n')
 
-        f = ('(synth-fun {function_name} ({arguments}) State (',
-             '    (Start State (',
-             '        {start_block}',
-             '    ))',
-             '    (BoolExpr Bool (',
-             '        (Variable Bool)',
-             '        (not BoolExpr)',
-             '        (and BoolExpr BoolExpr)',
-             '        (<= RealExpr RealExpr)',
-             '    ))',
-             '    (RealExpr Real (',
-             '        {allowed_values}',
-             '        (Variable Real)',
-             # '        (+ RealExpr RealExpr)',
-             # '        (- RealExpr RealExpr)',
-             # '        (* RealExpr RealExpr)',
-             # '        (/ RealExpr RealExpr)',
-             '        (ite BoolExpr RealExpr RealExpr)',
-             '    ))',
-             '))\n')
-        fs.write('\n'.join(f).format(function_name=function_name, arguments=arguments, start_block=start_block, allowed_values=' '.join(map(str, allowed_values))))
+        print('[.] State #{state}: writing constraints...')
+        for state_to, (water, methane, pump) in constraints[state]:
+            arguments = '{} {} {}'.format(water, methane, pump).lower()
+            f.write(f'(constraint (= ({function_name} {arguments}) {state_to}))\n')
 
-    fs.write('\n')
+        f.write('\n(check-synth)\n')
+        print(f'[+] State #{state}: done')
 
-    # - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
 
-    print(' >  Writing constraints...')
-    for state_from, state_to, (water, methane, pump) in sorted(constraints):
-        # DEBUG
-        # if state_from != 1:
-        #     continue
-        # DEBUG
-        function_name = state2funcname(state_from)
-        arguments = '{} {} {}'.format(water, methane, pump).lower()
-        fs.write('(constraint (= ({} {}) {}))\n'.format(function_name, arguments, state_to))
+def infer(state):
+    path = Path(path_sygus_template.format(state2funcname(state)))
+    cmd = f'cvc4-stable {path}'
+    process = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+    # Although there should be just two lines ("unsat" and "(define-fun ...") lets try to parse "all" definitions
+    for m in infer_pattern.finditer(process.stdout.decode()):
+        func_name = m.group('func_name')
+        arg_names = ' '.join(m.captures('arg_name'))
+        # ret_type = m.group('ret_type')
+        ret_type = 'State'
+        arg_types = ' -> '.join(m.captures('arg_type') + [ret_type])
+        body = m.group('body')
+        s = f'{func_name} :: {arg_types}\n{func_name} {arg_names} = {body}'
+        yield s
 
-    fs.write('\n(check-synth)\n')
 
-    # fs.write('\n(get-info :reason-unknown)\n')
-    # fs.write('\n(get-assignment)\n')
-    # fs.write('\n(get-unsat-core)\n')
+def process(state):
+    write_sygus(state)
+    synthesized_functions = list(infer(state))
+    return synthesized_functions
 
-    print('[+] Done writing SyGuS in {:.3f}s'.format(time.time() - time_start))
+
+print('[*] Submitting tasks to pool...')
+with ThreadPoolExecutor() as executor:
+    tasks = {executor.submit(process, state): state for state in automaton}
+
+    with path_inferred.open('w') as f:
+        for future in as_completed(tasks):
+            state = tasks[future]
+            synthesized_functions = future.result()
+            print(f'[+] Dumping synthesized function(s) for state #{state}.')
+            for synfunc in synthesized_functions:
+                f.write(f'{synfunc}\n\n')
+
+# - -- --- -- - -- --- -- - -- --- -- - -- --- -- - -- --- -- -
+
+print('[+] Done in {:.3f}s'.format(time.time() - time_start))
